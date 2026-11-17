@@ -1,0 +1,7 @@
+pandas
+lxml
+xlrd
+openpyxl
+pytest
+
+
