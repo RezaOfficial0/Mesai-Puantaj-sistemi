@@ -15,12 +15,12 @@ def ham_puantaj(gunler):
     return gunler["fazla_mesai_dk"].fillna(0)
 
 
-def karsilastir(kisiler, gunler, bordro, manuel=None, kural=ham_puantaj):
+def karsilastir(kisiler, gunler, bordro, manuel=None, kural=ham_puantaj, son_islem=None):
     # 1) Kişi eşleştirme
     eslesme, _, _ = eslestir(kisiler, bordro, manuel)
 
     # 2) Bizim hesap: kuralı her güne uygula, kişi bazında topla
-    g = gunler.copy()
+    g = gunler.merge(kisiler[["kart_no", "hesap_grubu"]], on="kart_no", how="left")
     g["bizim_dk"] = kural(g).astype("Int64")
     g["puantaj_dk"] = g["fazla_mesai_dk"].fillna(0)
     bizim = g.groupby("kart_no")[["puantaj_dk", "bizim_dk"]].sum()
@@ -38,6 +38,10 @@ def karsilastir(kisiler, gunler, bordro, manuel=None, kural=ham_puantaj):
         .merge(bizim, left_on="kart_no", right_index=True)
         .merge(b, left_on="anahtar", right_index=True)
     )
+    # 5) Kişi bazında son işlem (ör. devamsızlık kesintisi, aylık yuvarlama)
+    if son_islem is not None:
+        tablo["bizim_dk"] = son_islem(tablo, g).astype("Int64")
+
     tablo["fark_dk"] = tablo["bizim_dk"] - tablo["bordro_dk"]
     tablo["durum"] = "FARKLI"
     tablo.loc[tablo["fark_dk"].abs() <= TOLERANS_DK, "durum"] = "YAKIN"
