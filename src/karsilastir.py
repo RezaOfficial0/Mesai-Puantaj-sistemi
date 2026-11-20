@@ -21,9 +21,16 @@ def karsilastir(kisiler, gunler, bordro, manuel=None, kural=ham_puantaj, son_isl
 
     # 2) Bizim hesap: kuralı her güne uygula, kişi bazında topla
     g = gunler.merge(kisiler[["kart_no", "hesap_grubu"]], on="kart_no", how="left")
-    g["bizim_dk"] = kural(g).astype("Int64")
+    #    Kural ya tek seri (fazla mesai) ya da fm_dk + ht_dk sütunlu tablo döndürür.
+    sonuc = kural(g)
+    if isinstance(sonuc, pd.DataFrame):
+        g["bizim_fm_dk"] = sonuc["fm_dk"].astype("Int64")
+        g["bizim_ht_dk"] = sonuc["ht_dk"].astype("Int64")
+    else:
+        g["bizim_fm_dk"] = sonuc.astype("Int64")
+        g["bizim_ht_dk"] = 0
     g["puantaj_dk"] = g["fazla_mesai_dk"].fillna(0)
-    bizim = g.groupby("kart_no")[["puantaj_dk", "bizim_dk"]].sum()
+    bizim = g.groupby("kart_no")[["puantaj_dk", "bizim_fm_dk", "bizim_ht_dk"]].sum()
 
     # 3) Bordro: aynı ad birden fazla satırdaysa topla
     b = bordro.copy()
@@ -38,10 +45,13 @@ def karsilastir(kisiler, gunler, bordro, manuel=None, kural=ham_puantaj, son_isl
         .merge(bizim, left_on="kart_no", right_index=True)
         .merge(b, left_on="anahtar", right_index=True)
     )
-    # 5) Kişi bazında son işlem (ör. devamsızlık kesintisi, aylık yuvarlama)
+    # 5) Kişi bazında son işlem (ör. devamsızlık kesintisi, aylık yuvarlama) - sadece fm
     if son_islem is not None:
-        tablo["bizim_dk"] = son_islem(tablo, g).astype("Int64")
+        tablo["bizim_fm_dk"] = son_islem(tablo, g).astype("Int64")
 
+    tablo["bizim_dk"] = tablo["bizim_fm_dk"] + tablo["bizim_ht_dk"]
+    tablo["fark_fm_dk"] = tablo["bizim_fm_dk"] - tablo["fm_dk"]
+    tablo["fark_ht_dk"] = tablo["bizim_ht_dk"] - tablo["ht_dk"]
     tablo["fark_dk"] = tablo["bizim_dk"] - tablo["bordro_dk"]
     tablo["durum"] = "FARKLI"
     tablo.loc[tablo["fark_dk"].abs() <= TOLERANS_DK, "durum"] = "YAKIN"
@@ -55,6 +65,8 @@ def ozet(tablo, grup="ÜRETİM"):
     return {
         "kisi": len(t),
         "tam": int((t["durum"] == "TAM").sum()),
+        "tam_fm": int((t["fark_fm_dk"] == 0).sum()),
+        "tam_ht": int((t["fark_ht_dk"] == 0).sum()),
         "yakin": int((t["durum"] != "FARKLI").sum()),
         "toplam_fark_saat": round(float(t["fark_dk"].sum()) / 60, 1),
         "mutlak_fark_saat": round(float(t["fark_dk"].abs().sum()) / 60, 1),
@@ -63,10 +75,14 @@ def ozet(tablo, grup="ÜRETİM"):
 
 def excel_yaz(tablo, yol):
     cikti = tablo.copy()
-    for c in ["puantaj_dk", "bizim_dk", "bordro_dk", "fm_dk", "ht_dk", "fark_dk"]:
+    for c in ["puantaj_dk", "bizim_fm_dk", "bizim_ht_dk", "bizim_dk", "bordro_dk", "fm_dk", "ht_dk",
+              "fark_fm_dk", "fark_ht_dk", "fark_dk"]:
         cikti[c.replace("_dk", "_saat")] = (cikti[c] / 60).round(2)
     sutunlar = ["kart_no", "anahtar", "bordro_adi", "sirket", "bolum", "hesap_grubu", "gun",
-                "puantaj_saat", "bizim_saat", "fm_saat", "ht_saat", "bordro_saat", "fark_saat", "durum"]
+                "puantaj_saat",
+                "bizim_fm_saat", "fm_saat", "fark_fm_saat",
+                "bizim_ht_saat", "ht_saat", "fark_ht_saat",
+                "bizim_saat", "bordro_saat", "fark_saat", "durum"]
     cikti[sutunlar].to_excel(yol, index=False)
 
 
