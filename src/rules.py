@@ -77,6 +77,13 @@ def _calisma_araliklari(satir):
     return araliklar
 
 
+def calisma_dk(g):
+    """Her gün için vardiya başına kırpılmış toplam çalışma dakikası (eksik çiftler 0)."""
+    def sure(satir):
+        return sum(int((e - b).total_seconds() // 60) for b, e in _calisma_araliklari(satir))
+    return g.apply(sure, axis=1).astype("int64") if len(g) else pd.Series(dtype="int64")
+
+
 def tatil_kesisim_dk(g, tatiller):
     """Her gün için çalışmanın resmi tatil aralıklarına düşen ham (yuvarlanmamış) dakikası."""
     if len(g) == 0:
